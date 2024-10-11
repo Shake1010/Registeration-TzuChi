@@ -118,7 +118,7 @@ public class PatientViewerApp extends Application {
             case "P": case "A": case "W": return BASE_URL + "/register/row2-patient";
             case "E": return BASE_URL + "/register/patientE";
             case "D": return BASE_URL + "/register/patientD";
-            case "B": return BASE_URL + "/register/row6-patient"; // Assuming there's an endpoint for Row6
+            case "B": return BASE_URL + "/register/patientB"; // Assuming there's an endpoint for Row6
             default: return "";
         }
     }
@@ -128,15 +128,40 @@ public class PatientViewerApp extends Application {
                 .connectTimeout(Duration.ofSeconds(10))
                 .build();
 
+        String dateParam = "?date=" + java.time.LocalDate.now().toString();
+
         HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(endpoint))
+                .uri(URI.create(endpoint + dateParam))
                 .header("Content-Type", "application/json")
                 .POST(HttpRequest.BodyPublishers.noBody())
                 .build();
 
         client.sendAsync(request, HttpResponse.BodyHandlers.ofString())
                 .thenApply(HttpResponse::body)
-                .thenAccept(this::updateResultList)
+                .thenAccept(responseBody -> {
+                    Platform.runLater(() -> {
+                        try {
+                            Map<String, Object> response = objectMapper.readValue(responseBody, new TypeReference<Map<String, Object>>() {});
+                            String patientId = String.valueOf(response.get("patientId"));
+                            String registeredSequence = String.valueOf(response.get("registeredSequence"));
+                            Integer patientNumber = (Integer) response.get("patientNumber");
+
+                            if ("null".equals(patientId) || "null".equals(registeredSequence) || patientNumber == null) {
+                                throw new Exception("Invalid response: missing required fields");
+                            }
+
+                            // Update the TextField for row 5
+                            TextField row5Field = numberFields.get("5");
+                            if (row5Field != null) {
+                                row5Field.setText(String.valueOf(patientNumber));
+                            }
+
+                            updateResultList(responseBody);
+                        } catch (Exception e) {
+                            showAlert("Error", "Failed to parse response: " + e.getMessage() + "\nResponse body: " + responseBody);
+                        }
+                    });
+                })
                 .exceptionally(e -> {
                     Platform.runLater(() -> showAlert("Error", getDetailedErrorMessage(e)));
                     e.printStackTrace();
@@ -152,34 +177,45 @@ public class PatientViewerApp extends Application {
         int nextNumber = currentNumber + 1;
         numberField.setText(String.valueOf(nextNumber));
 
-        String patientId = letter + nextNumber;
-
         HttpClient client = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(10))
                 .build();
 
-        String jsonBody = String.format("{\"patientId\":\"%s\"}", patientId);
-        String dateParam = "?date=" + java.time.LocalDate.now();
+        // Create a Row2 object matching the server-side entity
+        Map<String, Object> row2Data = new HashMap<>();
+        row2Data.put("patientCategory", letter.charAt(0));  // Send as a Character
+        row2Data.put("patientNumber", nextNumber);
+        row2Data.put("sectionNumber", 2);
+        row2Data.put("inQueue", true);
+        // Note: We don't set patientId or priority, as the server handles these
 
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(endpoint + dateParam))
-                .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
-                .build();
+        try {
+            String jsonBody = objectMapper.writeValueAsString(row2Data);
+            String dateParam = "?date=" + java.time.LocalDate.now().toString();
 
-        client.sendAsync(request, HttpResponse.BodyHandlers.ofString())
-                .thenApply(response -> {
-                    if (response.statusCode() != 200) {
-                        throw new RuntimeException("HTTP error code: " + response.statusCode());
-                    }
-                    return response.body();
-                })
-                .thenAccept(this::updateResultList)
-                .exceptionally(e -> {
-                    Platform.runLater(() -> showAlert("Error", getDetailedErrorMessage(e)));
-                    e.printStackTrace();
-                    return null;
-                });
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(endpoint + dateParam))
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
+                    .build();
+
+            client.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+                    .thenApply(response -> {
+                        if (response.statusCode() != 200) {
+                            throw new RuntimeException("HTTP error code: " + response.statusCode() + ", Body: " + response.body());
+                        }
+                        return response.body();
+                    })
+                    .thenAccept(this::updateResultList)
+                    .exceptionally(e -> {
+                        Platform.runLater(() -> showAlert("Error", getDetailedErrorMessage(e)));
+                        e.printStackTrace();
+                        return null;
+                    });
+        } catch (Exception e) {
+            Platform.runLater(() -> showAlert("Error", "Failed to create request: " + e.getMessage()));
+            e.printStackTrace();
+        }
     }
     private String getColumnForLetter(String letter) {
         switch (letter) {
@@ -220,10 +256,6 @@ public class PatientViewerApp extends Application {
     private void updateResultList(String responseBody) {
         Platform.runLater(() -> {
             try {
-                if (responseBody == null || responseBody.isEmpty()) {
-                    throw new Exception("Empty response from server");
-                }
-
                 Map<String, Object> response = objectMapper.readValue(responseBody, new TypeReference<Map<String, Object>>() {});
 
                 String patientId = String.valueOf(response.get("patientId"));
