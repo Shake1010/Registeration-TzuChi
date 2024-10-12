@@ -3,16 +3,16 @@ package com.example.patientviewer.model;
 import java.time.LocalDateTime;
 import java.util.Objects;
 
-public class Row5 {
+public class Row8 {
     private String patientId;
     private Integer patientNumber;
     private LocalDateTime registeredTime;
     private Boolean inQueue;
 
     // Constructors
-    public Row5() {}
+    public Row8() {}
 
-    public Row5(String patientId, Integer patientNumber, LocalDateTime registeredTime, Boolean inQueue) {
+    public Row8(String patientId, Integer patientNumber, LocalDateTime registeredTime, Boolean inQueue) {
         this.patientId = patientId;
         this.patientNumber = patientNumber;
         this.registeredTime = registeredTime;
@@ -34,7 +34,7 @@ public class Row5 {
 
     @Override
     public String toString() {
-        return "Row5{" +
+        return "Row8{" +
                 "patientId='" + patientId + '\'' +
                 ", patientNumber=" + patientNumber +
                 ", registeredTime=" + registeredTime +
@@ -46,8 +46,8 @@ public class Row5 {
     public boolean equals(Object o) {
         if (this == o) return true;
         if (o == null || getClass() != o.getClass()) return false;
-        Row5 row5 = (Row5) o;
-        return Objects.equals(patientId, row5.patientId);
+        Row8 row8 = (Row8) o;
+        return Objects.equals(patientId, row8.patientId);
     }
 
     @Override

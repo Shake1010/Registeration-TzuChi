@@ -1,5 +1,12 @@
 package com.example.patientviewer;
+import com.example.patientviewer.model.Row2;
 
+import com.example.patientviewer.model.Row5;
+
+import com.example.patientviewer.model.Row6;
+
+import com.example.patientviewer.model.Row8;
+import com.example.patientviewer.model.RegistrationStation;
 import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.geometry.Insets;
@@ -27,12 +34,17 @@ public class PatientViewerApp extends Application {
 
     private ListView<String> resultListView;
     private final String BASE_URL = "http://localhost:8080/api";
+    private Map<Character, Integer> row2Counters;
     private final ObjectMapper objectMapper = new ObjectMapper();
     private ToggleGroup letterGroup;
     private Map<String, TextField> numberFields;
 
     @Override
     public void start(Stage primaryStage) {
+        row2Counters = new HashMap<>();
+        row2Counters.put('P', 0);
+        row2Counters.put('A', 0);
+        row2Counters.put('W', 0);
         primaryStage.setTitle("Patient Registration");
 
         VBox layout = new VBox(10);
@@ -108,8 +120,12 @@ public class PatientViewerApp extends Application {
 
         if (letter.equals("E")) {
             registerPatientE(endpoint);
+        } else if (letter.equals("D")) {
+            registerPatientD(endpoint);
+        } else if (letter.equals("B")) {
+            registerPatientB(endpoint);
         } else {
-            registerOtherPatient(endpoint, letter);
+            registerRow2Patient(endpoint, letter);
         }
     }
 
@@ -122,98 +138,210 @@ public class PatientViewerApp extends Application {
             default: return "";
         }
     }
-
     private void registerPatientE(String endpoint) {
+        sendRegistrationRequest(endpoint, this::handlePatientEResponse);
+    }
+
+    private void registerPatientD(String endpoint) {
+        sendRegistrationRequest(endpoint, this::handlePatientDResponse);
+    }
+
+    private void handlePatientEResponse(String responseBody) {
+        handleGenericResponse(responseBody, "5");
+    }
+
+    private void handlePatientDResponse(String responseBody) {
+        handleGenericResponse(responseBody, "8");
+    }
+
+    private void handlePatientBResponse(String responseBody) {
+        handleGenericResponse(responseBody, "6");
+    }
+
+    private void handleRow2Response(String responseBody, char category) {
+        Platform.runLater(() -> {
+            try {
+                Map<String, Object> response = objectMapper.readValue(responseBody, new TypeReference<Map<String, Object>>() {});
+
+                String patientId = null;
+                for (Map.Entry<String, Object> entry : response.entrySet()) {
+                    if (entry.getKey().toLowerCase().contains("patient") && entry.getKey().toLowerCase().contains("id")) {
+                        patientId = String.valueOf(entry.getValue());
+                        break;
+                    }
+                }
+
+                String registeredSequence = null;
+                for (Map.Entry<String, Object> entry : response.entrySet()) {
+                    if (entry.getKey().toLowerCase().contains("sequence")) {
+                        registeredSequence = String.valueOf(entry.getValue());
+                        break;
+                    }
+                }
+
+                if (patientId == null || registeredSequence == null) {
+                    throw new Exception("Invalid response: missing required fields");
+                }
+
+                // Extract the number from patientId (e.g., "P1" -> 1)
+                int patientNumber = Integer.parseInt(patientId.substring(1));
+
+                // Update the counter for this category
+                row2Counters.put(category, patientNumber);
+
+                // Calculate the sum of maximum values
+                int totalMaxCount = row2Counters.values().stream().mapToInt(Integer::intValue).sum();
+
+                // Update the TextField for row 2 with the total max count
+                TextField row2Field = numberFields.get("2");
+                if (row2Field != null) {
+                    row2Field.setText(String.valueOf(totalMaxCount));
+                }
+
+                ObservableList<String> results = FXCollections.observableArrayList(
+                        "Patient ID: " + patientId,
+                        "Registered Sequence: " + registeredSequence
+                );
+                resultListView.setItems(results);
+
+            } catch (Exception e) {
+                showAlert("Error", "Failed to parse response: " + e.getMessage() + "\nResponse body: " + responseBody);
+            }
+        });
+    }
+    private int getRow2CategoryCount(char category) {
+        return row2Counters.getOrDefault(category, 0);
+    }
+    private String updateRow2Text(String currentText, char category, int number) {
+        String[] parts = currentText.isEmpty() ? new String[3] : currentText.split(" ");
+        if (parts.length < 3) {
+            parts = new String[]{"", "", ""};
+        }
+
+        switch (category) {
+            case 'P':
+                parts[0] = "P" + number;
+                break;
+            case 'A':
+                parts[1] = "A" + number;
+                break;
+            case 'W':
+                parts[2] = "W" + number;
+                break;
+        }
+
+        return String.join(" ", parts).trim();
+    }
+
+    private void handleGenericResponse(String responseBody, String rowKey) {
+        Platform.runLater(() -> {
+            try {
+                Map<String, Object> response = objectMapper.readValue(responseBody, new TypeReference<Map<String, Object>>() {});
+
+                // Try to find a field that looks like a patient ID
+                String patientId = null;
+                for (Map.Entry<String, Object> entry : response.entrySet()) {
+                    if (entry.getKey().toLowerCase().contains("patient") && entry.getKey().toLowerCase().contains("id")) {
+                        patientId = String.valueOf(entry.getValue());
+                        break;
+                    }
+                }
+
+                // Try to find a field that looks like a registered sequence
+                String registeredSequence = null;
+                for (Map.Entry<String, Object> entry : response.entrySet()) {
+                    if (entry.getKey().toLowerCase().contains("sequence")) {
+                        registeredSequence = String.valueOf(entry.getValue());
+                        break;
+                    }
+                }
+
+                if (patientId == null || registeredSequence == null) {
+                    throw new Exception("Invalid response: missing required fields");
+                }
+
+                // Extract the number from patientId (e.g., "D14" -> 14)
+                int patientNumber = Integer.parseInt(patientId.replaceAll("\\D+", ""));
+
+                // Update the TextField for the corresponding row
+                TextField rowField = numberFields.get(rowKey);
+                if (rowField != null) {
+                    rowField.setText(String.valueOf(patientNumber));
+                }
+
+                ObservableList<String> results = FXCollections.observableArrayList(
+                        "Patient ID: " + patientId,
+                        "Registered Sequence: " + registeredSequence
+                );
+                resultListView.setItems(results);
+
+                System.out.println("Successfully processed response: " + responseBody);
+            } catch (Exception e) {
+                showAlert("Error", "Failed to parse response: " + e.getMessage() + "\nResponse body: " + responseBody);
+                System.err.println("Error processing response: " + e.getMessage());
+                e.printStackTrace();
+            }
+        });
+    }
+    private void registerPatientB(String endpoint) {
+        sendRegistrationRequest(endpoint, this::handlePatientBResponse);
+    }
+
+    private void registerRow2Patient(String endpoint, String letter) {
+        char category = letter.charAt(0);
+        int currentNumber = row2Counters.getOrDefault(category, 0);
+        int nextNumber = currentNumber + 1;
+        row2Counters.put(category, nextNumber);
+
+        Map<String, Object> row2Data = new HashMap<>();
+        row2Data.put("patientCategory", category);
+        row2Data.put("patientNumber", nextNumber);
+        row2Data.put("inQueue", true);
+
+        sendRegistrationRequest(endpoint, responseBody -> handleRow2Response(responseBody, category), row2Data);
+    }
+    private void sendRegistrationRequest(String endpoint, java.util.function.Consumer<String> responseHandler) {
+        sendRegistrationRequest(endpoint, responseHandler, null);
+    }
+
+    private void sendRegistrationRequest(String endpoint, java.util.function.Consumer<String> responseHandler, Map<String, Object> bodyData) {
         HttpClient client = HttpClient.newBuilder()
                 .connectTimeout(Duration.ofSeconds(10))
                 .build();
 
         String dateParam = "?date=" + java.time.LocalDate.now().toString();
 
-        HttpRequest request = HttpRequest.newBuilder()
-                .uri(URI.create(endpoint + dateParam))
-                .header("Content-Type", "application/json")
-                .POST(HttpRequest.BodyPublishers.noBody())
-                .build();
-
-        client.sendAsync(request, HttpResponse.BodyHandlers.ofString())
-                .thenApply(HttpResponse::body)
-                .thenAccept(responseBody -> {
-                    Platform.runLater(() -> {
-                        try {
-                            Map<String, Object> response = objectMapper.readValue(responseBody, new TypeReference<Map<String, Object>>() {});
-                            String patientId = String.valueOf(response.get("patientId"));
-                            String registeredSequence = String.valueOf(response.get("registeredSequence"));
-                            Integer patientNumber = (Integer) response.get("patientNumber");
-
-                            if ("null".equals(patientId) || "null".equals(registeredSequence) || patientNumber == null) {
-                                throw new Exception("Invalid response: missing required fields");
-                            }
-
-                            // Update the TextField for row 5
-                            TextField row5Field = numberFields.get("5");
-                            if (row5Field != null) {
-                                row5Field.setText(String.valueOf(patientNumber));
-                            }
-
-                            updateResultList(responseBody);
-                        } catch (Exception e) {
-                            showAlert("Error", "Failed to parse response: " + e.getMessage() + "\nResponse body: " + responseBody);
-                        }
-                    });
-                })
-                .exceptionally(e -> {
-                    Platform.runLater(() -> showAlert("Error", getDetailedErrorMessage(e)));
-                    e.printStackTrace();
-                    return null;
-                });
-    }
-
-    private void registerOtherPatient(String endpoint, String letter) {
-        String column = getColumnForLetter(letter);
-        TextField numberField = numberFields.get(column);
-
-        int currentNumber = numberField.getText().isEmpty() ? 0 : Integer.parseInt(numberField.getText());
-        int nextNumber = currentNumber + 1;
-        numberField.setText(String.valueOf(nextNumber));
-
-        HttpClient client = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(10))
-                .build();
-
-        // Create a Row2 object matching the server-side entity
-        Map<String, Object> row2Data = new HashMap<>();
-        row2Data.put("patientCategory", letter.charAt(0));  // Send as a Character
-        row2Data.put("patientNumber", nextNumber);
-        row2Data.put("sectionNumber", 2);
-        row2Data.put("inQueue", true);
-        // Note: We don't set patientId or priority, as the server handles these
-
         try {
-            String jsonBody = objectMapper.writeValueAsString(row2Data);
-            String dateParam = "?date=" + java.time.LocalDate.now().toString();
-
-            HttpRequest request = HttpRequest.newBuilder()
+            HttpRequest.Builder requestBuilder = HttpRequest.newBuilder()
                     .uri(URI.create(endpoint + dateParam))
-                    .header("Content-Type", "application/json")
-                    .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
-                    .build();
+                    .header("Content-Type", "application/json");
+
+            if (bodyData != null) {
+                String jsonBody = objectMapper.writeValueAsString(bodyData);
+                requestBuilder.POST(HttpRequest.BodyPublishers.ofString(jsonBody));
+                System.out.println("Sending request to " + endpoint + " with body: " + jsonBody);
+            } else {
+                requestBuilder.POST(HttpRequest.BodyPublishers.noBody());
+                System.out.println("Sending request to " + endpoint + " with no body");
+            }
+
+            HttpRequest request = requestBuilder.build();
 
             client.sendAsync(request, HttpResponse.BodyHandlers.ofString())
                     .thenApply(response -> {
-                        if (response.statusCode() != 200) {
-                            throw new RuntimeException("HTTP error code: " + response.statusCode() + ", Body: " + response.body());
-                        }
+                        System.out.println("Received response from " + endpoint + ": " + response.body());
                         return response.body();
                     })
-                    .thenAccept(this::updateResultList)
+                    .thenAccept(responseHandler)
                     .exceptionally(e -> {
                         Platform.runLater(() -> showAlert("Error", getDetailedErrorMessage(e)));
+                        System.err.println("Error sending request: " + e.getMessage());
                         e.printStackTrace();
                         return null;
                     });
         } catch (Exception e) {
             Platform.runLater(() -> showAlert("Error", "Failed to create request: " + e.getMessage()));
+            System.err.println("Error creating request: " + e.getMessage());
             e.printStackTrace();
         }
     }
@@ -256,18 +384,15 @@ public class PatientViewerApp extends Application {
     private void updateResultList(String responseBody) {
         Platform.runLater(() -> {
             try {
-                Map<String, Object> response = objectMapper.readValue(responseBody, new TypeReference<Map<String, Object>>() {});
+                RegistrationStation registration = objectMapper.readValue(responseBody, RegistrationStation.class);
 
-                String patientId = String.valueOf(response.get("patientId"));
-                String registeredSequence = String.valueOf(response.get("registeredSequence"));
-
-                if ("null".equals(patientId) || "null".equals(registeredSequence)) {
+                if (registration.getPatientId() == null || registration.getRegisteredSequence() == null) {
                     throw new Exception("Invalid response: patientId or registeredSequence is null");
                 }
 
                 ObservableList<String> results = FXCollections.observableArrayList(
-                        "Patient ID: " + patientId,
-                        "Registered Sequence: " + registeredSequence
+                        "Patient ID: " + registration.getPatientId(),
+                        "Registered Sequence: " + registration.getRegisteredSequence()
                 );
                 resultListView.setItems(results);
             } catch (Exception e) {
@@ -304,3 +429,4 @@ public class PatientViewerApp extends Application {
         launch(args);
     }
 }
+
