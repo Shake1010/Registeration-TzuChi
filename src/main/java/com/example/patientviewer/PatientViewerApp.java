@@ -34,17 +34,14 @@ public class PatientViewerApp extends Application {
 
     private ListView<String> resultListView;
     private final String BASE_URL = "http://localhost:8080/api";
-    private Map<Character, Integer> row2Counters;
+
     private final ObjectMapper objectMapper = new ObjectMapper();
     private ToggleGroup letterGroup;
     private Map<String, TextField> numberFields;
 
     @Override
     public void start(Stage primaryStage) {
-        row2Counters = new HashMap<>();
-        row2Counters.put('P', 0);
-        row2Counters.put('A', 0);
-        row2Counters.put('W', 0);
+
         primaryStage.setTitle("Patient Registration");
 
         VBox layout = new VBox(10);
@@ -163,21 +160,8 @@ public class PatientViewerApp extends Application {
             try {
                 Map<String, Object> response = objectMapper.readValue(responseBody, new TypeReference<Map<String, Object>>() {});
 
-                String patientId = null;
-                for (Map.Entry<String, Object> entry : response.entrySet()) {
-                    if (entry.getKey().toLowerCase().contains("patient") && entry.getKey().toLowerCase().contains("id")) {
-                        patientId = String.valueOf(entry.getValue());
-                        break;
-                    }
-                }
-
-                String registeredSequence = null;
-                for (Map.Entry<String, Object> entry : response.entrySet()) {
-                    if (entry.getKey().toLowerCase().contains("sequence")) {
-                        registeredSequence = String.valueOf(entry.getValue());
-                        break;
-                    }
-                }
+                String patientId = (String) response.get("patientId");
+                String registeredSequence = String.valueOf(response.get("registeredSequence"));
 
                 if (patientId == null || registeredSequence == null) {
                     throw new Exception("Invalid response: missing required fields");
@@ -186,16 +170,12 @@ public class PatientViewerApp extends Application {
                 // Extract the number from patientId (e.g., "P1" -> 1)
                 int patientNumber = Integer.parseInt(patientId.substring(1));
 
-                // Update the counter for this category
-                row2Counters.put(category, patientNumber);
-
-                // Calculate the sum of maximum values
-                int totalMaxCount = row2Counters.values().stream().mapToInt(Integer::intValue).sum();
-
-                // Update the TextField for row 2 with the total max count
+                // Update the TextField for row 2
                 TextField row2Field = numberFields.get("2");
                 if (row2Field != null) {
-                    row2Field.setText(String.valueOf(totalMaxCount));
+                    String currentText = row2Field.getText();
+                    String updatedText = updateRow2Text(currentText, category, patientNumber);
+                    row2Field.setText(updatedText);
                 }
 
                 ObservableList<String> results = FXCollections.observableArrayList(
@@ -204,14 +184,15 @@ public class PatientViewerApp extends Application {
                 );
                 resultListView.setItems(results);
 
+                System.out.println("Successfully processed Row2 response: " + responseBody);
             } catch (Exception e) {
                 showAlert("Error", "Failed to parse response: " + e.getMessage() + "\nResponse body: " + responseBody);
+                System.err.println("Error processing Row2 response: " + e.getMessage());
+                e.printStackTrace();
             }
         });
     }
-    private int getRow2CategoryCount(char category) {
-        return row2Counters.getOrDefault(category, 0);
-    }
+
     private String updateRow2Text(String currentText, char category, int number) {
         String[] parts = currentText.isEmpty() ? new String[3] : currentText.split(" ");
         if (parts.length < 3) {
@@ -289,14 +270,12 @@ public class PatientViewerApp extends Application {
 
     private void registerRow2Patient(String endpoint, String letter) {
         char category = letter.charAt(0);
-        int currentNumber = row2Counters.getOrDefault(category, 0);
-        int nextNumber = currentNumber + 1;
-        row2Counters.put(category, nextNumber);
+
+
 
         Map<String, Object> row2Data = new HashMap<>();
         row2Data.put("patientCategory", category);
-        row2Data.put("patientNumber", nextNumber);
-        row2Data.put("inQueue", true);
+
 
         sendRegistrationRequest(endpoint, responseBody -> handleRow2Response(responseBody, category), row2Data);
     }
@@ -381,25 +360,6 @@ public class PatientViewerApp extends Application {
                 });
     }
 
-    private void updateResultList(String responseBody) {
-        Platform.runLater(() -> {
-            try {
-                RegistrationStation registration = objectMapper.readValue(responseBody, RegistrationStation.class);
-
-                if (registration.getPatientId() == null || registration.getRegisteredSequence() == null) {
-                    throw new Exception("Invalid response: patientId or registeredSequence is null");
-                }
-
-                ObservableList<String> results = FXCollections.observableArrayList(
-                        "Patient ID: " + registration.getPatientId(),
-                        "Registered Sequence: " + registration.getRegisteredSequence()
-                );
-                resultListView.setItems(results);
-            } catch (Exception e) {
-                showAlert("Error", "Failed to parse response: " + e.getMessage() + "\nResponse body: " + responseBody);
-            }
-        });
-    }
 
 
     private void showAlert(String title, String content) {
