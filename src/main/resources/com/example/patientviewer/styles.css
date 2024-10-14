@@ -1,15 +1,61 @@
 .root {
     -fx-font-family: "Arial";
-    -fx-background-color: #f0f0f0;
+    -fx-background-color: white;
+}
+
+.header-label {
+    -fx-background-color: #4CAF50;
+    -fx-text-fill: white;
+    -fx-font-size: 24px;
+    -fx-padding: 10px;
+    -fx-alignment: center;
 }
 
 .button {
-    -fx-background-color: #4CAF50;
-    -fx-text-fill: white;
-    -fx-font-size: 14px;
+    -fx-background-color: #f0f0f0;
+    -fx-text-fill: black;
+    -fx-font-size: 18px;
+    -fx-border-color: #cccccc;
+    -fx-border-width: 1px;
+}
+
+.button:hover {
+    -fx-background-color: #e0e0e0;
 }
 
 .list-view {
     -fx-background-color: white;
     -fx-border-color: #cccccc;
+    -fx-border-width: 1px;
+}
+
+.list-cell {
+    -fx-background-color: white;
+    -fx-padding: 5px;
+}
+
+.list-cell:filled:selected, .list-cell:filled:selected:hover {
+    -fx-background-color: #e0e0e0;
+    -fx-text-fill: black;
+}
+
+.grid-pane {
+    -fx-background-color: white;
+    -fx-padding: 10px;
+}
+
+.column-label {
+    -fx-font-size: 16px;
+    -fx-font-weight: bold;
+    -fx-padding: 5px;
+}
+
+.left-section {
+    -fx-background-color: #f5f5f5;
+    -fx-border-color: #cccccc;
+    -fx-border-width: 1px;
+}
+
+.right-section {
+    -fx-background-color: white;
 }

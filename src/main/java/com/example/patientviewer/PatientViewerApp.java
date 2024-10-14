@@ -9,8 +9,6 @@ import javafx.scene.layout.*;
 import javafx.stage.Stage;
 import javafx.collections.FXCollections;
 import javafx.collections.ObservableList;
-import javafx.scene.text.Font;
-import javafx.scene.text.FontWeight;
 import javafx.geometry.Pos;
 
 import java.net.http.HttpClient;
@@ -38,22 +36,21 @@ public class PatientViewerApp extends Application {
 
         VBox mainLayout = new VBox(10);
         mainLayout.setPadding(new Insets(10));
+        mainLayout.setStyle("-fx-background-color: white;");
 
-        headerLabel = new Label("Latest Registered: None");
-        headerLabel.setStyle("-fx-background-color: #4CAF50; -fx-text-fill: white; -fx-padding: 10px;");
-        headerLabel.setFont(Font.font("System", FontWeight.BOLD, 20));
-        headerLabel.setPrefHeight(50);
+        headerLabel = new Label("註冊的號碼");
+        headerLabel.setStyle("-fx-background-color: #4CAF50; -fx-text-fill: white; -fx-padding: 10px; -fx-font-size: 20px; -fx-font-weight: bold;");
         headerLabel.setMaxWidth(Double.MAX_VALUE);
+        headerLabel.setAlignment(Pos.CENTER);
 
         HBox contentArea = new HBox(10);
-        VBox leftSection = createLeftSection();
-        VBox rightSection = createRightSection();
+        GridPane leftSection = createLeftSection();
+        GridPane rightSection = createRightSection();
 
-        // Set the HBox to use 20% for left section and 80% for right section
         HBox.setHgrow(leftSection, Priority.NEVER);
         HBox.setHgrow(rightSection, Priority.ALWAYS);
-        leftSection.setPrefWidth(200);
-        rightSection.setPrefWidth(800);
+        leftSection.setPrefWidth(300);
+        rightSection.setPrefWidth(700);
 
         contentArea.getChildren().addAll(leftSection, rightSection);
 
@@ -63,44 +60,42 @@ public class PatientViewerApp extends Application {
         primaryStage.setScene(scene);
         primaryStage.show();
 
-        // Initialize data
         initializeColumnData();
-
-        // Start periodic updates
         startPeriodicUpdates();
     }
 
-    private VBox createLeftSection() {
-        VBox leftSection = new VBox(5);
-        leftSection.setPadding(new Insets(5));
-        leftSection.setStyle("-fx-border-color: black; -fx-border-width: 1px;");
-
-        String[] categories = {"A", "B", "P", "E", "D", "W"};
-        for (String category : categories) {
-            Button categoryButton = new Button(category);
-            categoryButton.setMaxWidth(Double.MAX_VALUE);
-            categoryButton.setMinHeight(80); // Set a minimum height for the buttons
-            VBox.setVgrow(categoryButton, Priority.ALWAYS);
-            categoryButton.setOnAction(e -> registerPatient(category));
-            leftSection.getChildren().add(categoryButton);
-        }
-
-        return leftSection;
-    }
-
-    private VBox createRightSection() {
-        VBox rightSection = new VBox(5);
-        rightSection.setPadding(new Insets(5));
-
+    private GridPane createLeftSection() {
         GridPane grid = new GridPane();
         grid.setHgap(10);
         grid.setVgap(10);
-        grid.setAlignment(Pos.CENTER);
+        grid.setPadding(new Insets(10));
+        grid.setStyle("-fx-background-color: #f0f0f0; -fx-border-color: #cccccc; -fx-border-width: 1px;");
+
+        String[] categories = {"A", "E", "B", "W", "P", "D"};
+        for (int i = 0; i < categories.length; i++) {
+            Button categoryButton = new Button(categories[i]);
+            categoryButton.setMaxWidth(Double.MAX_VALUE);
+            categoryButton.setMinHeight(80);
+            categoryButton.setStyle("-fx-font-size: 18px;");
+            categoryButton.setOnAction(e -> registerPatient(categoryButton.getText()));
+            GridPane.setFillWidth(categoryButton, true);
+            GridPane.setFillHeight(categoryButton, true);
+            grid.add(categoryButton, i % 2, i / 2);
+        }
+
+        return grid;
+    }
+
+    private GridPane createRightSection() {
+        GridPane grid = new GridPane();
+        grid.setHgap(10);
+        grid.setVgap(10);
+        grid.setPadding(new Insets(10));
 
         String[] columnNames = {"2", "5", "8", "6"};
         for (int i = 0; i < columnNames.length; i++) {
             Label columnLabel = new Label(columnNames[i]);
-            columnLabel.setStyle("-fx-font-weight: bold;");
+            columnLabel.setStyle("-fx-font-weight: bold; -fx-font-size: 16px;");
             grid.add(columnLabel, i, 0);
 
             ListView<String> listView = new ListView<>();
@@ -108,14 +103,10 @@ public class PatientViewerApp extends Application {
             columnListViews.put(columnNames[i], listView);
             GridPane.setVgrow(listView, Priority.ALWAYS);
             GridPane.setHgrow(listView, Priority.ALWAYS);
-            grid.add(listView, i, 1);
+            grid.add(listView, i, 1, 1, 5);  // Span 5 rows
         }
 
-        // Make the grid expand to fill available space
-        VBox.setVgrow(grid, Priority.ALWAYS);
-        rightSection.getChildren().add(grid);
-
-        return rightSection;
+        return grid;
     }
 
     private void initializeColumnData() {
@@ -201,7 +192,7 @@ public class PatientViewerApp extends Application {
         String column = getColumnForPatientId(patientId);
         if (column != null) {
             LinkedList<String> columnItems = columnData.get(column);
-            columnItems.addLast(patientId);  // Add to the end of the list (top of the display)
+            columnItems.addFirst(patientId);  // Add to the start of the list (bottom of the display)
             updateColumnListView(column);
         }
     }
