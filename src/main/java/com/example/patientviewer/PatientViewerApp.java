@@ -3,69 +3,81 @@ package com.example.patientviewer;
 import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.geometry.Insets;
+import javafx.geometry.Pos;
 import javafx.scene.Scene;
 import javafx.scene.control.*;
 import javafx.scene.layout.*;
 import javafx.stage.Stage;
-import javafx.geometry.Pos;
 
+import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.net.URI;
 import java.time.Duration;
-import java.util.Map;
-import java.util.HashMap;
-import java.util.LinkedList;
-import java.util.List;
+import java.time.LocalDate;
+import java.util.*;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 public class PatientViewerApp extends Application {
 
-    private final String BASE_URL = "http://localhost:8080/api";
-    private final ObjectMapper objectMapper = new ObjectMapper();
-    private Map<String, LinkedList<String>> columnData = new HashMap<>();
-    private Map<String, VBox> columnListViews = new HashMap<>();
+    private static final String BASE_URL = "http://localhost:8080/api";
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
+    private static final HttpClient HTTP_CLIENT = HttpClient.newBuilder()
+            .connectTimeout(Duration.ofSeconds(20))
+            .version(HttpClient.Version.HTTP_1_1)
+            .build();
+
+    private final Map<String, LinkedList<String>> columnData = new HashMap<>();
+    private final Map<String, VBox> columnListViews = new HashMap<>();
     private Label headerLabel;
 
     @Override
     public void start(Stage primaryStage) {
         primaryStage.setTitle("Patient Queue System");
 
+        BorderPane mainLayout = createMainLayout();
+        Scene scene = new Scene(mainLayout, 1050, 600);
+        primaryStage.setScene(scene);
+        primaryStage.show();
+
+        initializeColumnData();
+        startPeriodicUpdates();
+    }
+
+    private BorderPane createMainLayout() {
         BorderPane mainLayout = new BorderPane();
         mainLayout.setPadding(new Insets(10));
         mainLayout.setStyle("-fx-background-color: white;");
 
-        headerLabel = new Label("Latest Registration");
-        headerLabel.setStyle("-fx-background-color: #4CAF50; -fx-text-fill: white; -fx-padding: 10px; -fx-font-size: 20px; -fx-font-weight: bold;");
-        headerLabel.setMaxWidth(Double.MAX_VALUE);
-        headerLabel.setAlignment(Pos.CENTER);
+        headerLabel = createHeaderLabel();
         mainLayout.setTop(headerLabel);
 
         HBox contentArea = new HBox(10);
         GridPane leftSection = createLeftSection();
         GridPane rightSection = createRightSection();
 
-        // Set the HBox to use percentage-based sizing
         HBox.setHgrow(leftSection, Priority.NEVER);
         HBox.setHgrow(rightSection, Priority.ALWAYS);
 
-        // Set the widths using pixels
         leftSection.setPrefWidth(300);
-        rightSection.setPrefWidth(700); // Increased width to accommodate the new layout
+        rightSection.setPrefWidth(700);
 
         contentArea.getChildren().addAll(leftSection, rightSection);
         mainLayout.setCenter(contentArea);
 
-        // Adjust the initial window size
-        Scene scene = new Scene(mainLayout, 1050, 600); // Increased width to fit the new layout
-        primaryStage.setScene(scene);
-        primaryStage.show();
+        return mainLayout;
+    }
 
-        initializeColumnData();
-        startPeriodicUpdates();
+    private Label createHeaderLabel() {
+        Label label = new Label("Latest Registration");
+        label.setStyle("-fx-background-color: #4CAF50; -fx-text-fill: white; -fx-padding: 10px; -fx-font-size: 20px; -fx-font-weight: bold;");
+        label.setMaxWidth(Double.MAX_VALUE);
+        label.setAlignment(Pos.CENTER);
+        return label;
     }
 
     private GridPane createLeftSection() {
@@ -87,17 +99,22 @@ public class PatientViewerApp extends Application {
 
         String[] categories = {"A", "E", "B", "W", "P", "D"};
         for (int i = 0; i < categories.length; i++) {
-            Button categoryButton = new Button(categories[i]);
-            categoryButton.setMaxWidth(Double.MAX_VALUE);
-            categoryButton.setMaxHeight(Double.MAX_VALUE);
-            categoryButton.setStyle("-fx-font-size: 36px; -fx-font-weight: bold;"); // Increased font size
-            categoryButton.setOnAction(e -> registerPatient(categoryButton.getText()));
-            GridPane.setFillWidth(categoryButton, true);
-            GridPane.setFillHeight(categoryButton, true);
+            Button categoryButton = createCategoryButton(categories[i]);
             grid.add(categoryButton, i % 2, i / 2);
         }
 
         return grid;
+    }
+
+    private Button createCategoryButton(String category) {
+        Button button = new Button(category);
+        button.setMaxWidth(Double.MAX_VALUE);
+        button.setMaxHeight(Double.MAX_VALUE);
+        button.setStyle("-fx-font-size: 36px; -fx-font-weight: bold;");
+        button.setOnAction(e -> registerPatient(category));
+        GridPane.setFillWidth(button, true);
+        GridPane.setFillHeight(button, true);
+        return button;
     }
 
     private GridPane createRightSection() {
@@ -139,20 +156,7 @@ public class PatientViewerApp extends Application {
         columnLabel.setMaxWidth(Double.MAX_VALUE);
         columnLabel.setAlignment(Pos.CENTER);
 
-        VBox idContainer = new VBox(5);
-        idContainer.setAlignment(Pos.TOP_CENTER);
-        idContainer.setFillWidth(true);
-        VBox.setVgrow(idContainer, Priority.ALWAYS);
-
-        for (int j = 0; j < 4; j++) {
-            Label idLabel = new Label("");
-            idLabel.setStyle("-fx-padding: 5px; -fx-border-color: #cccccc; -fx-border-width: 1px; -fx-alignment: center;");
-            idLabel.setMaxWidth(Double.MAX_VALUE);
-            idLabel.setMaxHeight(Double.MAX_VALUE);
-            VBox.setVgrow(idLabel, Priority.ALWAYS);
-            idContainer.getChildren().add(idLabel);
-        }
-
+        VBox idContainer = createIdContainer();
         ScrollPane scrollPane = new ScrollPane(idContainer);
         scrollPane.setFitToWidth(true);
         scrollPane.setFitToHeight(true);
@@ -168,9 +172,26 @@ public class PatientViewerApp extends Application {
 
         return columnBox;
     }
+
+    private VBox createIdContainer() {
+        VBox idContainer = new VBox(5);
+        idContainer.setAlignment(Pos.TOP_CENTER);
+        idContainer.setFillWidth(true);
+        VBox.setVgrow(idContainer, Priority.ALWAYS);
+
+        for (int j = 0; j < 4; j++) {
+            Label idLabel = new Label("");
+            idLabel.setStyle("-fx-padding: 5px; -fx-border-color: #cccccc; -fx-border-width: 1px; -fx-alignment: center;");
+            idLabel.setMaxWidth(Double.MAX_VALUE);
+            idLabel.setMaxHeight(Double.MAX_VALUE);
+            VBox.setVgrow(idLabel, Priority.ALWAYS);
+            idContainer.getChildren().add(idLabel);
+        }
+
+        return idContainer;
+    }
+
     private void handleMoreButtonClick(String column) {
-        // Implement the logic for when the "More" button is clicked
-        // This could involve showing a popup with more items, etc.
         System.out.println("More button clicked for column: " + column);
     }
 
@@ -180,13 +201,10 @@ public class PatientViewerApp extends Application {
 
         for (int i = 0; i < 4; i++) {
             Label idLabel = (Label) idContainer.getChildren().get(i);
-            if (i < items.size()) {
-                idLabel.setText(items.get(i));
-            } else {
-                idLabel.setText("");
-            }
+            idLabel.setText(i < items.size() ? items.get(i) : "");
         }
     }
+
     private void initializeColumnData() {
         columnData.put("2", new LinkedList<>());
         columnData.put("5", new LinkedList<>());
@@ -225,21 +243,17 @@ public class PatientViewerApp extends Application {
     }
 
     private void sendRegistrationRequest(String endpoint, Map<String, Object> bodyData) {
-        HttpClient client = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(10))
-                .build();
-
-        String dateParam = "?date=" + java.time.LocalDate.now().toString();
+        String dateParam = "?date=" + LocalDate.now();
 
         try {
-            String jsonBody = objectMapper.writeValueAsString(bodyData);
+            String jsonBody = OBJECT_MAPPER.writeValueAsString(bodyData);
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(endpoint + dateParam))
                     .header("Content-Type", "application/json")
                     .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
                     .build();
 
-            client.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+            HTTP_CLIENT.sendAsync(request, HttpResponse.BodyHandlers.ofString())
                     .thenApply(HttpResponse::body)
                     .thenAccept(this::handleRegistrationResponse)
                     .exceptionally(e -> {
@@ -254,7 +268,7 @@ public class PatientViewerApp extends Application {
     private void handleRegistrationResponse(String responseBody) {
         Platform.runLater(() -> {
             try {
-                Map<String, Object> response = objectMapper.readValue(responseBody, Map.class);
+                Map<String, Object> response = OBJECT_MAPPER.readValue(responseBody, Map.class);
                 String patientId = (String) response.get("patientId");
                 if (patientId != null) {
                     updateQueueDisplay(patientId);
@@ -265,7 +279,6 @@ public class PatientViewerApp extends Application {
             }
         });
     }
-
 
     private void updateQueueDisplay(String patientId) {
         String column = getColumnForPatientId(patientId);
@@ -289,8 +302,6 @@ public class PatientViewerApp extends Application {
         }
 
         String category = patientId.substring(0, 1);
-        String sectionNumber = patientId.substring(1, 2);
-
         switch (category) {
             case "P":
             case "A":
@@ -306,8 +317,6 @@ public class PatientViewerApp extends Application {
                 return null;
         }
     }
-
-
 
     private void startPeriodicUpdates() {
         Thread updateThread = new Thread(() -> {
@@ -325,10 +334,6 @@ public class PatientViewerApp extends Application {
     }
 
     private void fetchQueueData() {
-        HttpClient client = HttpClient.newBuilder()
-                .connectTimeout(Duration.ofSeconds(10))
-                .build();
-
         String[] endpoints = {
                 BASE_URL + "/row2",
                 BASE_URL + "/row5",
@@ -342,67 +347,62 @@ public class PatientViewerApp extends Application {
                     .GET()
                     .build();
 
-            client.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+            HTTP_CLIENT.sendAsync(request, HttpResponse.BodyHandlers.ofString())
                     .thenApply(HttpResponse::body)
                     .thenAccept(this::handleQueueDataResponse)
                     .exceptionally(e -> {
-                        Platform.runLater(() -> showAlert("Error", "Failed to fetch queue data: " + e.getMessage()));
+                        Platform.runLater(() -> {
+                            String errorMessage = "Failed to fetch queue data: " + e.getMessage();
+                            System.err.println(errorMessage);
+                            e.printStackTrace();
+                            showAlert("Error", errorMessage);
+                        });
                         return null;
                     });
         }
     }
 
 
+    private String getColumnForEndpoint(String responseBody) {
+        if (responseBody.contains("\"sectionNumber\":2")) return "2";
+        if (responseBody.contains("\"sectionNumber\":5")) return "5";
+        if (responseBody.contains("\"sectionNumber\":6")) return "6";
+        if (responseBody.contains("\"sectionNumber\":8")) return "8";
+        return null;
+    }
+
     private void handleQueueDataResponse(String responseBody) {
         try {
-            // First, try to parse the response as an error object
-            Map<String, Object> responseMap = objectMapper.readValue(responseBody, new TypeReference<Map<String, Object>>() {});
+            JsonNode rootNode = OBJECT_MAPPER.readTree(responseBody);
 
-            if (responseMap.containsKey("status") && responseMap.containsKey("error")) {
-                // This is an error response
-                int status = ((Number) responseMap.get("status")).intValue(); // Fixed: Use Number and intValue()
-                String error = (String) responseMap.get("error");
-                String path = (String) responseMap.get("path");
+            int sectionNumber = rootNode.get("sectionNumber").asInt();
+            String column = String.valueOf(sectionNumber);
 
-                Platform.runLater(() -> {
-                    showAlert("Error", "Failed to fetch queue data: " + error + " (Status: " + status + ", Path: " + path + ")");
-                });
-                return;
-            }
+            JsonNode patientsNode = rootNode.get("patients");
 
-            // If it's not an error, proceed with parsing as patient data
-            List<Map<String, Object>> patientList = objectMapper.readValue(responseBody, new TypeReference<List<Map<String, Object>>>() {});
+            LinkedList<String> columnItems = columnData.get(column);
+            columnItems.clear();
 
-            // Clear existing data
-            for (String column : columnData.keySet()) {
-                columnData.get(column).clear();
-            }
-
-            // Process each patient in the list
-            for (Map<String, Object> patient : patientList) {
-                String patientId = (String) patient.get("patientId");
-                String column = getColumnForPatientId(patientId);
-
-                if (column != null) {
-                    LinkedList<String> columnItems = columnData.get(column);
+            for (JsonNode patientNode : patientsNode) {
+                String patientId = patientNode.get("patientId").asText();
+                boolean inQueue = patientNode.get("inQueue").asBoolean();
+                if (inQueue) {
                     columnItems.addLast(patientId);
-                    while (columnItems.size() > 4) {
-                        columnItems.removeFirst();
-                    }
                 }
             }
 
-            // Update display for all columns
-            for (String column : columnData.keySet()) {
-                Platform.runLater(() -> updateColumnDisplay(column));
+            while (columnItems.size() > 4) {
+                columnItems.removeFirst();
             }
+
+            Platform.runLater(() -> updateColumnDisplay(column));
         } catch (Exception e) {
             Platform.runLater(() -> {
                 showAlert("Error", "Failed to parse queue data: " + e.getMessage());
+                e.printStackTrace();
             });
         }
     }
-
     private void showAlert(String title, String content) {
         Platform.runLater(() -> {
             Alert alert = new Alert(Alert.AlertType.ERROR);
