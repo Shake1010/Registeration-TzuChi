@@ -16,12 +16,14 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.util.*;
-
+import java.util.stream.Collectors;
+import java.util.stream.StreamSupport;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-
+import java.time.LocalDateTime;
+import java.util.Comparator;
 public class PatientViewerApp extends Application {
 
     private static final String BASE_URL = "http://localhost:8080/api";
@@ -164,11 +166,7 @@ public class PatientViewerApp extends Application {
 
         columnListViews.put(columnName, idContainer);
 
-        Button moreButton = new Button("▼");
-        moreButton.setMaxWidth(Double.MAX_VALUE);
-        moreButton.setOnAction(e -> handleMoreButtonClick(columnName));
-
-        columnBox.getChildren().addAll(columnLabel, scrollPane, moreButton);
+        columnBox.getChildren().addAll(columnLabel, scrollPane);
 
         return columnBox;
     }
@@ -178,16 +176,6 @@ public class PatientViewerApp extends Application {
         idContainer.setAlignment(Pos.TOP_CENTER);
         idContainer.setFillWidth(true);
         VBox.setVgrow(idContainer, Priority.ALWAYS);
-
-        for (int j = 0; j < 4; j++) {
-            Label idLabel = new Label("");
-            idLabel.setStyle("-fx-padding: 5px; -fx-border-color: #cccccc; -fx-border-width: 1px; -fx-alignment: center;");
-            idLabel.setMaxWidth(Double.MAX_VALUE);
-            idLabel.setMaxHeight(Double.MAX_VALUE);
-            VBox.setVgrow(idLabel, Priority.ALWAYS);
-            idContainer.getChildren().add(idLabel);
-        }
-
         return idContainer;
     }
 
@@ -199,11 +187,17 @@ public class PatientViewerApp extends Application {
         VBox idContainer = columnListViews.get(column);
         LinkedList<String> items = columnData.get(column);
 
-        for (int i = 0; i < 4; i++) {
-            Label idLabel = (Label) idContainer.getChildren().get(i);
-            idLabel.setText(i < items.size() ? items.get(i) : "");
+        idContainer.getChildren().clear();
+        for (String patientId : items) {
+            Label idLabel = new Label(patientId);
+            idLabel.setStyle("-fx-padding: 5px; -fx-border-color: #cccccc; -fx-border-width: 1px; -fx-alignment: center;");
+            idLabel.setMaxWidth(Double.MAX_VALUE);
+            idLabel.setMaxHeight(Double.MAX_VALUE);
+            VBox.setVgrow(idLabel, Priority.NEVER);
+            idContainer.getChildren().add(idLabel);
         }
     }
+
 
     private void initializeColumnData() {
         columnData.put("2", new LinkedList<>());
@@ -349,10 +343,10 @@ public class PatientViewerApp extends Application {
 
             HTTP_CLIENT.sendAsync(request, HttpResponse.BodyHandlers.ofString())
                     .thenApply(HttpResponse::body)
-                    .thenAccept(this::handleQueueDataResponse)
+                    .thenAccept(responseBody -> handleQueueDataResponse(responseBody, endpoint))
                     .exceptionally(e -> {
                         Platform.runLater(() -> {
-                            String errorMessage = "Failed to fetch queue data: " + e.getMessage();
+                            String errorMessage = "Failed to fetch queue data from " + endpoint + ": " + e.getMessage();
                             System.err.println(errorMessage);
                             e.printStackTrace();
                             showAlert("Error", errorMessage);
@@ -371,37 +365,120 @@ public class PatientViewerApp extends Application {
         return null;
     }
 
-    private void handleQueueDataResponse(String responseBody) {
+    private void handleQueueDataResponse(String responseBody, String endpoint) {
         try {
+            System.out.println("Raw JSON response for " + endpoint + ": " + responseBody);
+
             JsonNode rootNode = OBJECT_MAPPER.readTree(responseBody);
 
-            int sectionNumber = rootNode.get("sectionNumber").asInt();
-            String column = String.valueOf(sectionNumber);
+            System.out.println("JSON root node type for " + endpoint + ": " + rootNode.getNodeType());
 
-            JsonNode patientsNode = rootNode.get("patients");
-
-            LinkedList<String> columnItems = columnData.get(column);
-            columnItems.clear();
-
-            for (JsonNode patientNode : patientsNode) {
-                String patientId = patientNode.get("patientId").asText();
-                boolean inQueue = patientNode.get("inQueue").asBoolean();
-                if (inQueue) {
-                    columnItems.addLast(patientId);
-                }
+            if (rootNode.isArray()) {
+                System.out.println("Handling as array response for " + endpoint);
+                handleArrayResponse(rootNode);
+            } else if (rootNode.isObject()) {
+                System.out.println("Handling as object response for " + endpoint);
+                handleObjectResponse(rootNode, endpoint);
+            } else {
+                System.out.println("Unexpected root node type for " + endpoint + ": " + rootNode.getNodeType());
+                throw new IllegalArgumentException("Unexpected JSON structure: neither array nor object");
             }
-
-            while (columnItems.size() > 4) {
-                columnItems.removeFirst();
-            }
-
-            Platform.runLater(() -> updateColumnDisplay(column));
         } catch (Exception e) {
+            System.err.println("Error parsing response for " + endpoint + ": " + e.getMessage());
+            System.err.println("Full response body: " + responseBody);
+            e.printStackTrace();
             Platform.runLater(() -> {
-                showAlert("Error", "Failed to parse queue data: " + e.getMessage());
-                e.printStackTrace();
+                showAlert("Error", "Failed to parse queue data for " + endpoint + ": " + e.getMessage());
             });
         }
+    }
+    private void addPatientToList(JsonNode patientNode, List<PatientInfo> patientInfoList) {
+        String patientId = patientNode.path("patientId").asText();
+        boolean inQueue = patientNode.path("inQueue").asBoolean(true);
+        String registeredTimeStr = patientNode.path("registeredTime").asText();
+        LocalDateTime registeredTime = registeredTimeStr.isEmpty() ? LocalDateTime.now() : LocalDateTime.parse(registeredTimeStr);
+
+        if (inQueue) {
+            patientInfoList.add(new PatientInfo(patientId, registeredTime));
+        }
+    }
+
+    private void updateColumnData(String column, List<PatientInfo> patientInfoList) {
+        patientInfoList.sort(Comparator.comparing(PatientInfo::getRegisteredTime));
+
+        LinkedList<String> columnItems = columnData.get(column);
+        columnItems.clear();
+        for (PatientInfo patientInfo : patientInfoList) {
+            columnItems.addLast(patientInfo.getPatientId());
+        }
+
+        Platform.runLater(() -> updateColumnDisplay(column));
+    }
+
+    private String determineColumnFromPatientId(String patientId) {
+        if (patientId.startsWith("A") || patientId.startsWith("P") || patientId.startsWith("W")) return "2";
+        if (patientId.startsWith("E")) return "5";
+        if (patientId.startsWith("D")) return "8";
+        if (patientId.startsWith("B")) return "6";
+        throw new IllegalArgumentException("Unable to determine column from patient ID: " + patientId);
+    }
+    private void handleObjectResponse(JsonNode objectNode, String endpoint) {
+        System.out.println("Handling object response for " + endpoint);
+
+        // Print field names
+        StringBuilder fieldNames = new StringBuilder("Fields in the JSON object: ");
+        Iterator<String> fieldIterator = objectNode.fieldNames();
+        while (fieldIterator.hasNext()) {
+            fieldNames.append(fieldIterator.next());
+            if (fieldIterator.hasNext()) {
+                fieldNames.append(", ");
+            }
+        }
+        System.out.println(fieldNames.toString());
+
+        if (objectNode.has("sectionNumber") && objectNode.has("patients")) {
+            String column = String.valueOf(objectNode.get("sectionNumber").asInt());
+            JsonNode patientsNode = objectNode.get("patients");
+            processPatients(column, patientsNode, endpoint);
+        } else if (objectNode.has("patientId")) {
+            // Handle the case where we're receiving a single patient object
+            String column = determineColumnFromPatientId(objectNode.get("patientId").asText());
+            List<PatientInfo> patientInfoList = new ArrayList<>();
+            addPatientToList(objectNode, patientInfoList);
+            updateColumnData(column, patientInfoList);
+        } else {
+            System.err.println("Unrecognized JSON object structure for " + endpoint);
+            System.err.println("Full JSON object: " + objectNode.toString());
+            throw new IllegalArgumentException("Object does not contain expected fields: sectionNumber and patients, or patientId");
+        }
+    }
+
+    private void processPatients(String column, JsonNode patientsNode, String endpoint) {
+        List<PatientInfo> patientInfoList = new ArrayList<>();
+        if (patientsNode.isArray()) {
+            System.out.println("Processing patients array for " + endpoint);
+            for (JsonNode patientNode : patientsNode) {
+                addPatientToList(patientNode, patientInfoList);
+            }
+        } else if (patientsNode.isObject()) {
+            System.out.println("Processing single patient object for " + endpoint);
+            addPatientToList(patientsNode, patientInfoList);
+        } else {
+            System.err.println("Unexpected patients node type for " + endpoint + ": " + patientsNode.getNodeType());
+            throw new IllegalArgumentException("Patients field is neither an array nor an object");
+        }
+        updateColumnData(column, patientInfoList);
+    }
+    private void handleArrayResponse(JsonNode arrayNode) {
+        // Assume the array contains patient objects directly
+        String column = determineColumnFromPatientId(arrayNode.get(0).path("patientId").asText());
+        List<PatientInfo> patientInfoList = new ArrayList<>();
+
+        for (JsonNode patientNode : arrayNode) {
+            addPatientToList(patientNode, patientInfoList);
+        }
+
+        updateColumnData(column, patientInfoList);
     }
     private void showAlert(String title, String content) {
         Platform.runLater(() -> {
@@ -411,6 +488,30 @@ public class PatientViewerApp extends Application {
             alert.setContentText(content);
             alert.showAndWait();
         });
+    }
+    private static class PatientInfo {
+        private final String patientId;
+        private final LocalDateTime registeredTime;
+
+        public PatientInfo(String patientId, LocalDateTime registeredTime) {
+            this.patientId = patientId;
+            this.registeredTime = registeredTime;
+        }
+
+        public String getPatientId() {
+            return patientId;
+        }
+
+        public LocalDateTime getRegisteredTime() {
+            return registeredTime;
+        }
+    }
+    private int getSectionNumberFromEndpoint(String responseBody) {
+        if (responseBody.contains("row2")) return 2;
+        if (responseBody.contains("row5")) return 5;
+        if (responseBody.contains("row6")) return 6;
+        if (responseBody.contains("row8")) return 8;
+        throw new IllegalArgumentException("Unknown section number");
     }
 
     public static void main(String[] args) {
