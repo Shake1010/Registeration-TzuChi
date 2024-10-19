@@ -15,6 +15,8 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeParseException;  // Add this import
 import java.util.*;
 import java.util.stream.Collectors;
 import java.util.stream.StreamSupport;
@@ -22,8 +24,6 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import java.time.LocalDateTime;
-import java.util.Comparator;
 public class PatientViewerApp extends Application {
 
     private static final String BASE_URL = "http://localhost:8080/api";
@@ -184,8 +184,21 @@ public class PatientViewerApp extends Application {
     }
 
     private void updateColumnDisplay(String column) {
+        System.out.println("Updating display for column: " + column);
         VBox idContainer = columnListViews.get(column);
         LinkedList<String> items = columnData.get(column);
+
+        System.out.println("Number of items for column " + column + ": " + (items != null ? items.size() : "null"));
+
+        if (idContainer == null) {
+            System.err.println("Error: idContainer is null for column " + column);
+            return;
+        }
+
+        if (items == null) {
+            System.err.println("Error: items list is null for column " + column);
+            return;
+        }
 
         idContainer.getChildren().clear();
         for (String patientId : items) {
@@ -196,6 +209,8 @@ public class PatientViewerApp extends Application {
             VBox.setVgrow(idLabel, Priority.NEVER);
             idContainer.getChildren().add(idLabel);
         }
+
+        System.out.println("Updated display for column " + column + " with " + idContainer.getChildren().size() + " items");
     }
 
 
@@ -312,6 +327,7 @@ public class PatientViewerApp extends Application {
         }
     }
 
+
     private void startPeriodicUpdates() {
         Thread updateThread = new Thread(() -> {
             while (true) {
@@ -336,13 +352,17 @@ public class PatientViewerApp extends Application {
         };
 
         for (String endpoint : endpoints) {
+            System.out.println("Fetching data from: " + endpoint);
             HttpRequest request = HttpRequest.newBuilder()
                     .uri(URI.create(endpoint))
                     .GET()
                     .build();
 
             HTTP_CLIENT.sendAsync(request, HttpResponse.BodyHandlers.ofString())
-                    .thenApply(HttpResponse::body)
+                    .thenApply(response -> {
+                        System.out.println("Response status code for " + endpoint + ": " + response.statusCode());
+                        return response.body();
+                    })
                     .thenAccept(responseBody -> handleQueueDataResponse(responseBody, endpoint))
                     .exceptionally(e -> {
                         Platform.runLater(() -> {
@@ -373,9 +393,15 @@ public class PatientViewerApp extends Application {
 
             System.out.println("JSON root node type for " + endpoint + ": " + rootNode.getNodeType());
 
+            if (endpoint.contains("/row2")) {
+                System.out.println("Processing Row 2 data:");
+                System.out.println("Section number: " + rootNode.path("sectionNumber").asText());
+                System.out.println("Number of patients: " + rootNode.path("patients").size());
+            }
+
             if (rootNode.isArray()) {
                 System.out.println("Handling as array response for " + endpoint);
-                handleArrayResponse(rootNode);
+                handleArrayResponse(rootNode, endpoint);
             } else if (rootNode.isObject()) {
                 System.out.println("Handling as object response for " + endpoint);
                 handleObjectResponse(rootNode, endpoint);
@@ -388,19 +414,33 @@ public class PatientViewerApp extends Application {
             System.err.println("Full response body: " + responseBody);
             e.printStackTrace();
             Platform.runLater(() -> {
-                showAlert("Error", "Failed to parse queue data for " + endpoint + ": " + e.getMessage());
+                showAlert("Error", "Failed to parse queue data for " + endpoint + ": " + e.getMessage() + "\nResponse: " + responseBody);
             });
         }
     }
     private void addPatientToList(JsonNode patientNode, List<PatientInfo> patientInfoList) {
         String patientId = patientNode.path("patientId").asText();
         boolean inQueue = patientNode.path("inQueue").asBoolean(true);
-        String registeredTimeStr = patientNode.path("registeredTime").asText();
-        LocalDateTime registeredTime = registeredTimeStr.isEmpty() ? LocalDateTime.now() : LocalDateTime.parse(registeredTimeStr);
+        String registeredTimeStr = patientNode.path("registeredTime").asText(null);
+        LocalDateTime registeredTime;
+
+        if (registeredTimeStr == null || registeredTimeStr.isEmpty()) {
+            registeredTime = LocalDateTime.now(); // Use current time as fallback
+            System.out.println("Warning: Null or empty registeredTime for patient " + patientId + ". Using current time.");
+        } else {
+            try {
+                registeredTime = LocalDateTime.parse(registeredTimeStr);
+            } catch (DateTimeParseException e) {
+                System.err.println("Error parsing registeredTime for patient " + patientId + ": " + e.getMessage());
+                registeredTime = LocalDateTime.now(); // Use current time as fallback
+            }
+        }
 
         if (inQueue) {
             patientInfoList.add(new PatientInfo(patientId, registeredTime));
         }
+
+        System.out.println("Added patient: ID=" + patientId + ", inQueue=" + inQueue + ", registeredTime=" + registeredTime);
     }
 
     private void updateColumnData(String column, List<PatientInfo> patientInfoList) {
@@ -425,7 +465,7 @@ public class PatientViewerApp extends Application {
     private void handleObjectResponse(JsonNode objectNode, String endpoint) {
         System.out.println("Handling object response for " + endpoint);
 
-        // Print field names
+        // Print field names for debugging
         StringBuilder fieldNames = new StringBuilder("Fields in the JSON object: ");
         Iterator<String> fieldIterator = objectNode.fieldNames();
         while (fieldIterator.hasNext()) {
@@ -436,20 +476,38 @@ public class PatientViewerApp extends Application {
         }
         System.out.println(fieldNames.toString());
 
+        String column = null;
+        List<PatientInfo> patientInfoList = new ArrayList<>();
+
         if (objectNode.has("sectionNumber") && objectNode.has("patients")) {
-            String column = String.valueOf(objectNode.get("sectionNumber").asInt());
+            column = String.valueOf(objectNode.get("sectionNumber").asInt());
             JsonNode patientsNode = objectNode.get("patients");
-            processPatients(column, patientsNode, endpoint);
+            if (patientsNode.isArray()) {
+                for (JsonNode patientNode : patientsNode) {
+                    addPatientToList(patientNode, patientInfoList);
+                }
+            } else if (patientsNode.isObject()) {
+                addPatientToList(patientsNode, patientInfoList);
+            }
         } else if (objectNode.has("patientId")) {
-            // Handle the case where we're receiving a single patient object
-            String column = determineColumnFromPatientId(objectNode.get("patientId").asText());
-            List<PatientInfo> patientInfoList = new ArrayList<>();
+            column = determineColumnFromPatientId(objectNode.get("patientId").asText());
             addPatientToList(objectNode, patientInfoList);
+        } else {
+            // Try to infer the section number from the endpoint
+            column = String.valueOf(getSectionNumberFromEndpoint(endpoint));
+            if (objectNode.isArray()) {
+                for (JsonNode patientNode : objectNode) {
+                    addPatientToList(patientNode, patientInfoList);
+                }
+            } else {
+                addPatientToList(objectNode, patientInfoList);
+            }
+        }
+
+        if (column != null) {
             updateColumnData(column, patientInfoList);
         } else {
-            System.err.println("Unrecognized JSON object structure for " + endpoint);
-            System.err.println("Full JSON object: " + objectNode.toString());
-            throw new IllegalArgumentException("Object does not contain expected fields: sectionNumber and patients, or patientId");
+            System.err.println("Unable to determine column for response: " + objectNode);
         }
     }
 
@@ -469,9 +527,9 @@ public class PatientViewerApp extends Application {
         }
         updateColumnData(column, patientInfoList);
     }
-    private void handleArrayResponse(JsonNode arrayNode) {
-        // Assume the array contains patient objects directly
-        String column = determineColumnFromPatientId(arrayNode.get(0).path("patientId").asText());
+    private void handleArrayResponse(JsonNode arrayNode, String endpoint) {
+        System.out.println("Handling array response for " + endpoint);
+        String column = determineColumnFromEndpoint(endpoint);
         List<PatientInfo> patientInfoList = new ArrayList<>();
 
         for (JsonNode patientNode : arrayNode) {
@@ -479,6 +537,14 @@ public class PatientViewerApp extends Application {
         }
 
         updateColumnData(column, patientInfoList);
+    }
+
+    private String determineColumnFromEndpoint(String endpoint) {
+        if (endpoint.contains("/row2")) return "2";
+        if (endpoint.contains("/row5")) return "5";
+        if (endpoint.contains("/row6")) return "6";
+        if (endpoint.contains("/row8")) return "8";
+        throw new IllegalArgumentException("Unknown endpoint: " + endpoint);
     }
     private void showAlert(String title, String content) {
         Platform.runLater(() -> {
@@ -495,7 +561,7 @@ public class PatientViewerApp extends Application {
 
         public PatientInfo(String patientId, LocalDateTime registeredTime) {
             this.patientId = patientId;
-            this.registeredTime = registeredTime;
+            this.registeredTime = registeredTime != null ? registeredTime : LocalDateTime.now();
         }
 
         public String getPatientId() {

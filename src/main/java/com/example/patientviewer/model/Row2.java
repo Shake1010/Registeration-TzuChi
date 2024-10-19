@@ -14,36 +14,6 @@ public class Row2 {
         LOW, MID, HIGH
     }
 
-    // Constructors
-    public Row2() {}
-
-    public Row2(String patientId, Character patientCategory, Integer patientNumber, Integer sectionNumber, Boolean inQueue, Priority priority) {
-        this.patientId = patientId;
-        this.patientCategory = patientCategory;
-        this.patientNumber = patientNumber;
-        this.sectionNumber = sectionNumber;
-        this.inQueue = inQueue;
-        this.priority = priority;
-    }
-
-    // Getters and Setters
-    public String getPatientId() { return patientId; }
-    public void setPatientId(String patientId) { this.patientId = patientId; }
-
-    public Character getPatientCategory() { return patientCategory; }
-    public void setPatientCategory(Character patientCategory) { this.patientCategory = patientCategory; }
-
-    public Integer getPatientNumber() { return patientNumber; }
-    public void setPatientNumber(Integer patientNumber) { this.patientNumber = patientNumber; }
-
-    public Integer getSectionNumber() { return sectionNumber; }
-    public void setSectionNumber(Integer sectionNumber) { this.sectionNumber = sectionNumber; }
-
-    public Boolean getInQueue() { return inQueue; }
-    public void setInQueue(Boolean inQueue) { this.inQueue = inQueue; }
-
-    public Priority getPriority() { return priority; }
-    public void setPriority(Priority priority) { this.priority = priority; }
 
     @Override
     public String toString() {
