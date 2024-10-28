@@ -236,12 +236,12 @@ public class PatientViewerApp extends Application {
 
     private String getEndpointForCategory(String category) {
         switch (category) {
-            case "P":
+            case "E":
             case "A":
             case "W":
                 return BASE_URL + "/register/row2-patient";
-            case "E":
-                return BASE_URL + "/register/patientE";
+            case "P":
+                return BASE_URL + "/register/patientP";
             case "D":
                 return BASE_URL + "/register/patientD";
             case "B":
@@ -312,11 +312,11 @@ public class PatientViewerApp extends Application {
 
         String category = patientId.substring(0, 1);
         switch (category) {
-            case "P":
+            case "E":
             case "A":
             case "W":
                 return "2";
-            case "E":
+            case "P":
                 return "5";
             case "D":
                 return "8";
@@ -456,8 +456,8 @@ public class PatientViewerApp extends Application {
     }
 
     private String determineColumnFromPatientId(String patientId) {
-        if (patientId.startsWith("A") || patientId.startsWith("P") || patientId.startsWith("W")) return "2";
-        if (patientId.startsWith("E")) return "5";
+        if (patientId.startsWith("A") || patientId.startsWith("E") || patientId.startsWith("W")) return "2";
+        if (patientId.startsWith("P")) return "5";
         if (patientId.startsWith("D")) return "8";
         if (patientId.startsWith("B")) return "6";
         throw new IllegalArgumentException("Unable to determine column from patient ID: " + patientId);
