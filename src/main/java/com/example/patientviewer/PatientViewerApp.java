@@ -27,11 +27,13 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 public class PatientViewerApp extends Application {
 
     private static final String BASE_URL = "http://localhost:8080/api";
+//    private static final String BASE_URL = "http://172.104.124.175:8888/TzuChiQueueingSystem-0.0.1-SNAPSHOT/api";
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private static final HttpClient HTTP_CLIENT = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(20))
             .version(HttpClient.Version.HTTP_1_1)
             .build();
+    private Stage primaryStage;
 
     private final Map<String, LinkedList<String>> columnData = new HashMap<>();
     private final Map<String, VBox> columnListViews = new HashMap<>();
@@ -39,6 +41,8 @@ public class PatientViewerApp extends Application {
 
     @Override
     public void start(Stage primaryStage) {
+        primaryStage.setTitle("Patient Queue System");
+        this.primaryStage = primaryStage;
         primaryStage.setTitle("Patient Queue System");
 
         BorderPane mainLayout = createMainLayout();
@@ -48,12 +52,44 @@ public class PatientViewerApp extends Application {
 
         initializeColumnData();
         startPeriodicUpdates();
+        showLoginScene();
+    }
+    private void showLoginScene() {
+        VBox loginLayout = new VBox(10);
+        loginLayout.setPadding(new Insets(10));
+        loginLayout.setAlignment(Pos.CENTER);
+
+        Label titleLabel = new Label("Login");
+        titleLabel.setStyle("-fx-font-size: 24px; -fx-font-weight: bold;");
+
+        TextField usernameField = new TextField();
+        usernameField.setPromptText("Username");
+
+        PasswordField passwordField = new PasswordField();
+        passwordField.setPromptText("Password");
+
+        Button loginButton = new Button("Login");
+        loginButton.setOnAction(e -> authenticateUser(usernameField.getText(), passwordField.getText()));
+
+        Label messageLabel = new Label();
+        messageLabel.setStyle("-fx-text-fill: red;");
+
+        loginLayout.getChildren().addAll(titleLabel, usernameField, passwordField, loginButton, messageLabel);
+
+        Scene loginScene = new Scene(loginLayout, 300, 200);
+        primaryStage.setScene(loginScene);
+        primaryStage.show();
     }
 
     private BorderPane createMainLayout() {
         BorderPane mainLayout = new BorderPane();
         mainLayout.setPadding(new Insets(10));
         mainLayout.setStyle("-fx-background-color: white;");
+
+        Label headerLabel = new Label("Welcome to the Patient Queue System");
+        headerLabel.setStyle("-fx-font-size: 20px; -fx-font-weight: bold; -fx-text-fill: #4CAF50;");
+        headerLabel.setAlignment(Pos.CENTER);
+        mainLayout.setTop(headerLabel);
 
         headerLabel = createHeaderLabel();
         mainLayout.setTop(headerLabel);
@@ -72,6 +108,48 @@ public class PatientViewerApp extends Application {
         mainLayout.setCenter(contentArea);
 
         return mainLayout;
+    }
+    private void authenticateUser(String username, String password) {
+        if (username.isEmpty() || password.isEmpty()) {
+            showAlert("Error", "Please enter both username and password.");
+            return;
+        }
+
+        String endpoint = BASE_URL + "/auth/login";
+        Map<String, String> requestBody = new HashMap<>();
+        requestBody.put("username", username);
+        requestBody.put("password", password);
+
+        try {
+            String jsonBody = OBJECT_MAPPER.writeValueAsString(requestBody);
+
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(endpoint))
+                    .header("Content-Type", "application/json")
+                    .POST(HttpRequest.BodyPublishers.ofString(jsonBody))
+                    .build();
+
+            HTTP_CLIENT.sendAsync(request, HttpResponse.BodyHandlers.ofString())
+                    .thenApply(HttpResponse::body)
+                    .thenAccept(responseBody -> {
+                        if (responseBody.equalsIgnoreCase("Login Successful")) {
+                            Platform.runLater(this::showMainScene); // Show main scene on successful login
+                        } else {
+                            Platform.runLater(() -> showAlert("Login Failed", "Invalid username or password."));
+                        }
+                    })
+                    .exceptionally(e -> {
+                        Platform.runLater(() -> showAlert("Error", "Failed to connect to the server."));
+                        return null;
+                    });
+        } catch (Exception e) {
+            showAlert("Error", "Failed to create login request: " + e.getMessage());
+        }
+    }
+    private void showMainScene() {
+        BorderPane mainLayout = createMainLayout();
+        Scene mainScene = new Scene(mainLayout, 1050, 600);
+        primaryStage.setScene(mainScene);
     }
 
     private Label createHeaderLabel() {
@@ -579,6 +657,7 @@ public class PatientViewerApp extends Application {
         if (responseBody.contains("row8")) return 8;
         throw new IllegalArgumentException("Unknown section number");
     }
+
 
     public static void main(String[] args) {
         launch(args);
