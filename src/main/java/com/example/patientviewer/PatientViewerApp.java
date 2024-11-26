@@ -26,8 +26,8 @@ import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 public class PatientViewerApp extends Application {
 
-    private static final String BASE_URL = "http://localhost:8080/api";
-//    private static final String BASE_URL = "http://172.104.124.175:8888/TzuChiQueueingSystem-0.0.1-SNAPSHOT/api";
+ //   private static final String BASE_URL = "http://localhost:8080/api";
+    private static final String BASE_URL = "http://172.104.124.175:8888/TzuChiQueueingSystem-0.0.1-SNAPSHOT/api";
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private static final HttpClient HTTP_CLIENT = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(20))
@@ -86,7 +86,7 @@ public class PatientViewerApp extends Application {
         mainLayout.setPadding(new Insets(10));
         mainLayout.setStyle("-fx-background-color: white;");
 
-        Label headerLabel = new Label("Welcome to the Patient Queue System");
+        headerLabel = new Label("Welcome to the Patient Queue System");
         headerLabel.setStyle("-fx-font-size: 20px; -fx-font-weight: bold; -fx-text-fill: #4CAF50;");
         headerLabel.setAlignment(Pos.CENTER);
         mainLayout.setTop(headerLabel);
@@ -380,7 +380,9 @@ public class PatientViewerApp extends Application {
     }
 
     private void updateHeaderWithLatestPatientId(String patientId) {
-        headerLabel.setText("Latest Registered: " + patientId);
+        if (headerLabel != null) {
+            Platform.runLater(() -> headerLabel.setText("Latest Registered: " + patientId));
+        }
     }
 
     private String getColumnForPatientId(String patientId) {
