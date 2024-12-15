@@ -1,5 +1,6 @@
 package com.example.patientviewer;
 
+import com.example.patientviewer.model.ZebraPrinterUtil;
 import javafx.application.Application;
 import javafx.application.Platform;
 import javafx.geometry.Insets;
@@ -13,7 +14,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
-import java.time.Duration;
+
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeParseException;  // Add this import
@@ -24,13 +25,20 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import javafx.animation.FadeTransition;
+import javafx.util.Duration;
+import javax.print.*;
+import javax.print.attribute.*;
+import javax.print.attribute.standard.*;
+import java.io.*;
+
 public class PatientViewerApp extends Application {
 
- //   private static final String BASE_URL = "http://localhost:8080/api";
+//    private static final String BASE_URL = "http://localhost:8080/api";
     private static final String BASE_URL = "http://172.104.124.175:8888/TzuChiQueueingSystem-0.0.1-SNAPSHOT/api";
     private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
     private static final HttpClient HTTP_CLIENT = HttpClient.newBuilder()
-            .connectTimeout(Duration.ofSeconds(20))
+            .connectTimeout(java.time.Duration.ofSeconds(20))  // Use fully qualified name for java.time.Duration
             .version(HttpClient.Version.HTTP_1_1)
             .build();
     private Stage primaryStage;
@@ -38,6 +46,9 @@ public class PatientViewerApp extends Application {
     private final Map<String, LinkedList<String>> columnData = new HashMap<>();
     private final Map<String, VBox> columnListViews = new HashMap<>();
     private Label headerLabel;
+    private VBox statusBar;
+    private Label statusLabel;
+    private boolean isShowingError = false;
 
     @Override
     public void start(Stage primaryStage) {
@@ -46,6 +57,8 @@ public class PatientViewerApp extends Application {
         primaryStage.setTitle("Patient Queue System");
 
         BorderPane mainLayout = createMainLayout();
+        statusBar = createStatusBar();
+        mainLayout.setBottom(statusBar);
         Scene scene = new Scene(mainLayout, 1050, 600);
         primaryStage.setScene(scene);
         primaryStage.show();
@@ -53,6 +66,65 @@ public class PatientViewerApp extends Application {
         initializeColumnData();
         startPeriodicUpdates();
         showLoginScene();
+    }
+    private void showStatusMessage(String message, boolean isError) {
+        if (isError && isShowingError) {
+            return;
+        }
+
+        Platform.runLater(() -> {
+            statusLabel.setText(message);
+
+            if (isError) {
+                statusBar.setStyle("-fx-background-color: #f8d7da; -fx-padding: 8px; -fx-border-color: #f5c6cb;");
+                statusLabel.setStyle("-fx-text-fill: #721c24; -fx-font-size: 14px;");
+                isShowingError = true;
+            } else {
+                statusBar.setStyle("-fx-background-color: #d4edda; -fx-padding: 8px; -fx-border-color: #c3e6cb;");
+                statusLabel.setStyle("-fx-text-fill: #155724; -fx-font-size: 14px;");
+                isShowingError = false;
+            }
+
+            if (!statusBar.isVisible()) {
+                statusBar.setVisible(true);
+                FadeTransition fadeIn = new FadeTransition(javafx.util.Duration.millis(300), statusBar);  // Use fully qualified name for javafx.util.Duration
+                fadeIn.setFromValue(0.0);
+                fadeIn.setToValue(1.0);
+                fadeIn.play();
+            }
+
+            if (!isError) {
+                new Thread(() -> {
+                    try {
+                        Thread.sleep(3000);
+                        Platform.runLater(() -> {
+                            FadeTransition fadeOut = new FadeTransition(javafx.util.Duration.millis(300), statusBar);  // Use fully qualified name for javafx.util.Duration
+                            fadeOut.setFromValue(1.0);
+                            fadeOut.setToValue(0.0);
+                            fadeOut.setOnFinished(e -> statusBar.setVisible(false));
+                            fadeOut.play();
+                        });
+                    } catch (InterruptedException e) {
+                        e.printStackTrace();
+                    }
+                }).start();
+            }
+        });
+    }
+
+    private VBox createStatusBar() {
+        VBox statusBar = new VBox();
+        statusBar.setVisible(false);
+        statusBar.setStyle("-fx-background-color: #f8d7da; -fx-padding: 8px; -fx-border-color: #f5c6cb;");
+
+        statusLabel = new Label();
+        statusLabel.setStyle("-fx-text-fill: #721c24; -fx-font-size: 14px;");
+        statusLabel.setWrapText(true);
+        statusLabel.setMaxWidth(Double.MAX_VALUE);
+        statusLabel.setAlignment(Pos.CENTER);
+
+        statusBar.getChildren().add(statusLabel);
+        return statusBar;
     }
     private void showLoginScene() {
         VBox loginLayout = new VBox(10);
@@ -342,13 +414,18 @@ public class PatientViewerApp extends Application {
 
             HTTP_CLIENT.sendAsync(request, HttpResponse.BodyHandlers.ofString())
                     .thenApply(HttpResponse::body)
-                    .thenAccept(this::handleRegistrationResponse)
+                    .thenAccept(response -> {
+                        handleRegistrationResponse(response);
+                        showStatusMessage("Patient registered successfully", false);
+                    })
                     .exceptionally(e -> {
-                        Platform.runLater(() -> showAlert("Error", "Failed to register patient: " + e.getMessage()));
+                        Platform.runLater(() -> {
+                            showStatusMessage("Failed to register patient: Connection error", true);
+                        });
                         return null;
                     });
         } catch (Exception e) {
-            showAlert("Error", "Failed to create request: " + e.getMessage());
+            showStatusMessage("Failed to create request: " + e.getMessage(), true);
         }
     }
 
@@ -360,6 +437,13 @@ public class PatientViewerApp extends Application {
                 if (patientId != null) {
                     updateQueueDisplay(patientId);
                     updateHeaderWithLatestPatientId(patientId);
+
+                    // Print the patient ID
+                    try {
+                        ZebraPrinterUtil.printLabel(patientId);
+                    } catch (PrintException e) {
+                        showAlert("Printing Error", "Failed to print label: " + e.getMessage());
+                    }
                 }
             } catch (Exception e) {
                 showAlert("Error", "Failed to parse response: " + e.getMessage());
@@ -446,15 +530,13 @@ public class PatientViewerApp extends Application {
                     .thenAccept(responseBody -> handleQueueDataResponse(responseBody, endpoint))
                     .exceptionally(e -> {
                         Platform.runLater(() -> {
-                            String errorMessage = "Failed to fetch queue data from " + endpoint + ": " + e.getMessage();
-                            System.err.println(errorMessage);
-                            e.printStackTrace();
-                            showAlert("Error", errorMessage);
+                            showStatusMessage("Connection error: Unable to reach server. Retrying...", true);
                         });
                         return null;
                     });
         }
     }
+
 
 
     private String getColumnForEndpoint(String responseBody) {
